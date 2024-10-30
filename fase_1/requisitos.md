@@ -27,3 +27,5 @@ apertar play, e a música irá tocar. Ele(a) poderá pausar a música a qualquer
 
 - Pygame;
 - PyQt.
+
+teste
