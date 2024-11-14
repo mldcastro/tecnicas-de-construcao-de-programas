@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "Music Player"
+version = "0.1.0"
+description = ""
+authors = [
+    "Matheus Castro <matheuslc36.mc@gmail.com>",
+    "Kelvin Brose <ksb_56@hotmail.com>",
+    "Vitor Chassot  <vitorchassot759@gmail.com>"
+]
+
+[tool.poetry.dependencies]
+python = "~3.11"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "6.29.5"
+black = "24.8.0"
+pytest = "8.3.2"
+
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"
