@@ -11,6 +11,8 @@ authors = [
 [tool.poetry.dependencies]
 python = "~3.11"
 
+pyqt6 = "6.7.1"
+
 [tool.poetry.group.dev.dependencies]
 ipykernel = "6.29.5"
 black = "24.8.0"
