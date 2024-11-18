@@ -2,6 +2,7 @@ from typing import Optional
 from PyQt6 import QtWidgets
 
 from .input_error import InputException, InputErrorBox
+from .input_validator import InputValidator
 
 
 class UserInputWidget(QtWidgets.QWidget):
@@ -53,9 +54,8 @@ class UserInputWidget(QtWidgets.QWidget):
         self._ok_button.setDisabled(False)
         self._is_blocked = False
 
-    def _validate_input(self, input_str: str) -> None:
-        if not input_str:
-            raise InputException("Invalid input")
+    def _validate_input(self) -> None:
+        InputValidator.validate(self._input.toPlainText())
 
     def _show_error(self, e: InputException) -> None:
         self._error_box.set_text(str(e))
@@ -63,7 +63,7 @@ class UserInputWidget(QtWidgets.QWidget):
 
     def _on_ok_pressed(self) -> None:
         try:
-            self._validate_input(self._input.toPlainText())
+            self._validate_input()
             self._value = self._input.toPlainText()
             self._is_valid = True
             self._error_box.hide()
