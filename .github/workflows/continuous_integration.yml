@@ -1,0 +1,50 @@
+name: Continuous Integration
+on:
+  push:
+    branches: [main]
+
+  pull_request:
+    branches: [main]
+
+jobs:
+  check_formatting_linting_and_unit_tests:
+    name: Check Formatting, Linting and Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: 'actions/checkout@v4'
+
+      - name: Setup Python 3.11
+        uses: 'actions/setup-python@v4'
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: "1.7.0"
+
+      - name: Setup local virtual environment
+        run: |
+          poetry config virtualenvs.create true --local
+          poetry config virtualenvs.in-project true --local
+
+      - name: Cache virtual environment based on poetry.lock
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - if: steps.cache-venv.outputs.cache-hit != 'true'
+        name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Check Formatting
+        run: poetry run ruff format --check src
+
+      - name: Check Linting
+        run: poetry run ruff check src
+
+      - name: Unit Tests
+        run: poetry run pytest src

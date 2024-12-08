@@ -18,6 +18,15 @@ ipykernel = "6.29.5"
 pytest = "8.3.2"
 ruff = "0.7.4"
 
+[tool.ruff]
+line-length = 90
+
+[tool.ruff.lint]
+# Add the `line-too-long` rule to the enforced rule set. By default, Ruff omits rules that
+# overlap with the use of a formatter, like Black, but we can override this behavior by
+# explicitly adding the rule.
+extend-select = ["E501"]
+
 [build-system]
 requires = ["poetry-core>=1.7.0"]
 build-backend = "poetry.core.masonry.api"
