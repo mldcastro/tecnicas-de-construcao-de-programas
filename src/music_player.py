@@ -13,16 +13,18 @@ class MusicPlayer(QtWidgets.QWidget):
 
         self._layout = QtWidgets.QGridLayout(self)
 
-        self._audio_manager = Audio()
         self._command_list_box = CommandListBox()
 
         self._user_input_widget = UserInputWidget()
         self._user_input_widget.value_changed.connect(self._feed_string_to_audio_manager)
 
+        self._audio_manager = Audio()
+        self._audio_manager.finished.connect(self._on_music_ended)
+
         self._control_board_widget = ControlBoard()
 
-        self._control_board_widget.play.connect(self._audio_manager.play)
         self._control_board_widget.play.connect(self._user_input_widget.block)
+        self._control_board_widget.play.connect(self._on_play_clicked)
 
         self._control_board_widget.pause.connect(self._audio_manager.pause)
         self._control_board_widget.pause.connect(self._user_input_widget.unblock)
@@ -38,4 +40,12 @@ class MusicPlayer(QtWidgets.QWidget):
         self._command_list_box.display()
 
     def _feed_string_to_audio_manager(self) -> None:
-        self._audio_manager.from_string(self._user_input_widget.value)
+        self._audio_manager.set_sequence(self._user_input_widget.value)
+
+    def _on_play_clicked(self) -> None:
+        self._audio_manager.set_should_play(True)
+        self._audio_manager.play()
+
+    def _on_music_ended(self) -> None:
+        self._control_board_widget.to_play_state()
+        self._audio_manager.restart()

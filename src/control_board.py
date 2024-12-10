@@ -118,3 +118,9 @@ class ControlBoard(QtWidgets.QWidget):
 
     def _on_restart_button_clicked(self) -> None:
         self.restart.emit()
+
+    def to_play_state(self) -> None:
+        if not self._is_playing:
+            return
+
+        self._play_pause_button.click()
