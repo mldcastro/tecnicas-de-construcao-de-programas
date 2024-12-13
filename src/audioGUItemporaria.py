@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QLineEdit
 from PyQt5.QtCore import Qt
-from audio_playerTempo import AudioPlayer
+from audio import Audio
 
 class AudioPlayerGUI(QWidget):
     def __init__(self):
@@ -51,7 +51,7 @@ class AudioPlayerGUI(QWidget):
             return
 
         self.status_label.setText("Status: Tocando")
-        self.audio_player = AudioPlayer(sequence)
+        self.audio_player = Audio(sequence)
         self.audio_player.current_note.connect(self.update_status)
         self.audio_player.finished.connect(self.on_finished)
         self.audio_player.start()
