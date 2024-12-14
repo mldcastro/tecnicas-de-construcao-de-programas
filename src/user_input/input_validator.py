@@ -1,4 +1,4 @@
-from .command_list import Commands
+from src.command_list import Commands
 from .input_error import InputException
 
 

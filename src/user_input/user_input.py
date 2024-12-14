@@ -18,7 +18,7 @@ class UserInputWidget(QtWidgets.QWidget):
         self._input.setPlaceholderText("Type here")
 
         self._ok_button = QtWidgets.QPushButton("OK")
-        self._ok_button.setFixedWidth(50)
+        self._ok_button.setFixedWidth(70)
         self._ok_button.clicked.connect(self._on_ok_pressed)
 
         self._error_box = InputErrorBox()

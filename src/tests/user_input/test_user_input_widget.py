@@ -1,9 +1,7 @@
 import pytest
 
-from src.user_input import UserInputWidget
-from src.input_error import InputException
+from src.user_input import UserInputWidget, InputException, InputValidator
 from src.commands import Commands
-from src.input_validator import InputValidator
 
 
 def test_none_value_at_start(qtbot):

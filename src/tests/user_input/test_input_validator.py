@@ -1,8 +1,7 @@
 import pytest
 
-from src.input_validator import InputValidator
+from src.user_input import InputValidator, InputException
 from src.command_list import Commands
-from src.input_error import InputException
 
 
 def test_raises_exception_if_input_is_empty():
