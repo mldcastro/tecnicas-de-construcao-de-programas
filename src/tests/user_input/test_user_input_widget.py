@@ -16,20 +16,32 @@ def test_none_is_valid_at_start(qtbot):
 
 def test_not_blocked_at_start(qtbot):
     user_input_widget = UserInputWidget()
+
     assert not user_input_widget.is_blocked
+    assert user_input_widget._input.isEnabled()
+    assert user_input_widget._ok_button.isEnabled()
+    assert user_input_widget._txt_loader.isEnabled()
 
 
 def test_block(qtbot):
     user_input_widget = UserInputWidget()
     user_input_widget.block()
+
     assert user_input_widget.is_blocked
+    assert not user_input_widget._input.isEnabled()
+    assert not user_input_widget._ok_button.isEnabled()
+    assert not user_input_widget._txt_loader.isEnabled()
 
 
 def test_unblock(qtbot):
     user_input_widget = UserInputWidget()
     user_input_widget.block()
     user_input_widget.unblock()
+
     assert not user_input_widget.is_blocked
+    assert user_input_widget._input.isEnabled()
+    assert user_input_widget._ok_button.isEnabled()
+    assert user_input_widget._txt_loader.isEnabled()
 
 
 def test_empty_input_is_invalid(qtbot):
@@ -84,3 +96,11 @@ def test_value_is_input_when_valid(qtbot):
     user_input_widget._ok_button.click()
 
     assert user_input_widget.value == "a"
+
+
+def test_click_ok_emits_signal(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText("a")
+
+    with qtbot.waitSignal(user_input_widget.value_changed):
+        user_input_widget._ok_button.click()
