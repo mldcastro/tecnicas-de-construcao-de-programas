@@ -1,4 +1,4 @@
-class Audio(...):
+class Audio:
     def __init__(self, *args, **kwargs) -> None: ...
 
     @property

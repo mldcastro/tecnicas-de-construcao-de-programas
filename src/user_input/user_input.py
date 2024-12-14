@@ -1,6 +1,6 @@
 from typing import Optional
 from PyQt6 import QtWidgets
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from .input_error import InputException, InputErrorBox
 from .input_validator import InputValidator
@@ -8,6 +8,8 @@ from .txt_loader import TxtLoaderWidget
 
 
 class UserInputWidget(QtWidgets.QWidget):
+    value_changed = pyqtSignal(str)
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -75,6 +77,8 @@ class UserInputWidget(QtWidgets.QWidget):
             self._value = self._input.toPlainText()
             self._is_valid = True
             self._error_box.hide()
+
+            self.value_changed.emit(self._value)
 
         except InputException as e:
             self._value = None
