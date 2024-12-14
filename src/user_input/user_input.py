@@ -53,11 +53,13 @@ class UserInputWidget(QtWidgets.QWidget):
     def block(self) -> None:
         self._input.setDisabled(True)
         self._ok_button.setDisabled(True)
+        self._txt_loader.setDisabled(True)
         self._is_blocked = True
 
     def unblock(self) -> None:
         self._input.setDisabled(False)
         self._ok_button.setDisabled(False)
+        self._txt_loader.setDisabled(False)
         self._is_blocked = False
 
     def _validate_input(self) -> None:
