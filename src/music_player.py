@@ -1,4 +1,5 @@
 from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt
 
 from .user_input import UserInputWidget
 from .command_list import CommandListBox
@@ -13,7 +14,7 @@ class MusicPlayer(QtWidgets.QWidget):
         self._user_input_widget = UserInputWidget()
         self._command_list_box = CommandListBox()
 
-        self._layout.addWidget(self._user_input_widget, 0, 0)
-        self._layout.addWidget(self._command_list_box, 1, 0)
+        self._layout.addWidget(self._user_input_widget, 0, 0, Qt.AlignmentFlag.AlignLeft)
+        self._layout.addWidget(self._command_list_box, 1, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._command_list_box.display()
