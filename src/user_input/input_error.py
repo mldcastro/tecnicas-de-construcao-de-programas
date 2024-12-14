@@ -11,6 +11,8 @@ class InputErrorBox(QtWidgets.QWidget):
 
         self._error_label = QtWidgets.QLabel()
         self._error_label.setStyleSheet("color: red;")
+        self._error_label.setFixedWidth(400)
+        self._error_label.setWordWrap(True)
 
         self._layout.addWidget(self._error_label)
 

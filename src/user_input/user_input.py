@@ -1,8 +1,10 @@
 from typing import Optional
 from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt
 
 from .input_error import InputException, InputErrorBox
 from .input_validator import InputValidator
+from .txt_loader import TxtLoaderWidget
 
 
 class UserInputWidget(QtWidgets.QWidget):
@@ -13,20 +15,24 @@ class UserInputWidget(QtWidgets.QWidget):
         self.setLayout(self._layout)
 
         self._input = QtWidgets.QTextEdit()
-        self._input.setFixedHeight(50)
-        self._input.setFixedWidth(300)
+        self._input.setFixedHeight(100)
+        self._input.setFixedWidth(400)
         self._input.setPlaceholderText("Type here")
 
         self._ok_button = QtWidgets.QPushButton("OK")
         self._ok_button.setFixedWidth(70)
         self._ok_button.clicked.connect(self._on_ok_pressed)
 
+        self._txt_loader = TxtLoaderWidget()
+        self._txt_loader.file_loaded.connect(self._on_file_loaded)
+
         self._error_box = InputErrorBox()
         self._error_box.hide()
 
         self._layout.addWidget(self._input)
-        self._layout.addWidget(self._ok_button)
-        self._layout.addWidget(self._error_box)
+        self._layout.addWidget(self._ok_button, 1, 0, Qt.AlignmentFlag.AlignLeft)
+        self._layout.addWidget(self._txt_loader, 1, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._layout.addWidget(self._error_box, 2, 0)
 
         self._value: Optional[str] = None
         self._is_valid: Optional[bool] = None
@@ -72,3 +78,7 @@ class UserInputWidget(QtWidgets.QWidget):
             self._value = None
             self._is_valid = False
             self._show_error(e)
+
+    def _on_file_loaded(self) -> None:
+        self._input.setText(self._txt_loader.value)
+        self._error_box.hide()
