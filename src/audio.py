@@ -8,9 +8,16 @@ class Audio(QThread):
     VOLUME_DEFAULT=30
     NOTE_DEFAULT=69
     VELOCITY_DEFAULT=60  #em BPM
-    INSTRUMENT_DEFAULT=110
+    INSTRUMENT_DEFAULT=27  #Guitarra Elétrica (Clean)
     OITAVA=12
     VOLUME_MAX=127
+    instrumentos = {
+    1: 0,  # Piano acústico
+    2: 27,  # Guitarra Elétrica (Clean)
+    3: 40,  # Violino
+    4: 73,  # Flauta
+    5: 65,  # Saxofone
+    }
     nota_midi = {
     1: 69,  # Lá
     2: 71,  # Si
@@ -46,35 +53,31 @@ class Audio(QThread):
         self.is_running = True
         
     def setNewNote(self):
-        index=self.current_char_index
-        if(self.sequence[index:(index+4)] == "BPM+"):
+        index = self.current_char_index
+        current_substr = self.sequence[index:(index+4)]  # Substring de até 4 caracteres para verificar 'BPM+'
+    
+        if current_substr == "BPM+":
             return
-        elif(self.sequence[index:(index+2)]=="R+"):
-            self.current_note_playing+=Audio.OITAVA
-            return
-        elif(self.sequence[index:(index+2)]=="R-"):
-            self.current_note_playing-=Audio.OITAVA
-            return
+        elif self.sequence[index:(index+2)] == "R+":
+            self.current_note_playing += Audio.OITAVA
+        elif self.sequence[index:(index+2)] == "R-":
+            self.current_note_playing -= Audio.OITAVA
         elif self.sequence[index] in Audio.char_to_midi:
             self.current_note_playing = Audio.char_to_midi[self.sequence[index]]
-            return
-        elif(self.sequence[index].upper()=='I' or self.sequence[index].upper()=='O'
-        or self.sequence[index].upper()=='U'):
-            if not ((self.sequence[index-1] in Audio.char_to_midi)):
-                self.current_note_playing=125
-            return
-        elif(self.sequence[index]=="?"):
+        elif self.sequence[index].upper() in ['I', 'O', 'U']:
+            if not (self.sequence[index-1] in Audio.char_to_midi and self.sequence[index-1] != ' '):
+                self.current_note_playing = 125
+        elif self.sequence[index] == "?":
             # Gerar número aleatório entre 1 e 7
             random_index = random.randint(1, 7)
+            self.current_note_playing = Audio.nota_midi[random_index]
 
-            # Obter a nota MIDI correspondente
-            nota = Audio.nota_midi[random_index]
-            self.current_note_playing=nota
-            return
+
     def set_new_instrument(self):
         index=self.current_char_index
         if(self.sequence[index] == "\n"):
-            self.current_instrument_playing=random.randint(110, 120)
+            index_instrumento=random.randint(1, 5)
+            self.current_instrument_playing=Audio.instrumentos[index_instrumento]
         return
             
         
@@ -89,24 +92,20 @@ class Audio(QThread):
 
             
     def setNewCharIndex(self):
-        index=self.current_char_index
-        if(self.sequence[index:(index+4)] == "BPM+"):
-            self.current_char_index+=4
-            return
-        elif(self.sequence[index:(index+2)]=="R+"):
-            self.current_char_index+=2
-            return
-        elif(self.sequence[index:(index+2)]=="R-"):
-            self.current_char_index+=2
-            return
+        if self.sequence[self.current_char_index:self.current_char_index + 4] == "BPM+":
+            self.current_char_index += 4
+        elif self.sequence[self.current_char_index:self.current_char_index + 2] in {"R+", "R-"}:
+            self.current_char_index += 2
         else:
-            self.current_char_index+=1
-            return
+            self.current_char_index += 1
+
+
     def current_char_is_space(self)->bool:
         if(self.sequence[self.current_char_index]==" "):
             return True
         else:
             return False
+        
     def set_new_volume(self):
         if(self.sequence[self.current_char_index]=="+"):
             volume=2*self.current_volume
@@ -116,8 +115,9 @@ class Audio(QThread):
                 self.current_volume=volume
         elif(self.sequence[self.current_char_index]=="-"):
             self.current_volume=Audio.VOLUME_DEFAULT
+    
 
-    def controla_execucao_nota_atual(self, player: pygame.midi.Output):     
+    def inicia_execucao_nota_atual(self, player: pygame.midi.Output): 
         if(self.current_char_is_space()):
             self.current_note.emit(0,0)
         else:
@@ -125,36 +125,42 @@ class Audio(QThread):
             self.current_note.emit(self.current_instrument_playing, self.current_note_playing)
             # Toca ou retoma a nota
             player.note_on(self.current_note_playing, self.current_volume)
+    
+    def termina_execucao_nota_atual(self, player: pygame.midi.Output):
+        if not (self.current_char_is_space()):
+            player.note_off(self.current_note_playing, self.current_volume)
+    
+    def aguarda_pause(self):
+        while self.is_paused:
+            if not self.is_running:
+                return
+            time.sleep(0.1)
 
+    def controla_execucao_nota_atual(self, player: pygame.midi.Output):     
+        self.inicia_execucao_nota_atual(player)
         start_time = time.time()
         currentTime=start_time
         timeMax=60/self.current_velocity
         while (currentTime-start_time) < timeMax:
             if not self.is_running:  # Interrompe execução
-                if not (self.current_char_is_space()):
-                    player.note_off(self.current_note_playing, self.current_volume)
+                self.termina_execucao_nota_atual(player)
                 return
 
             if self.is_paused:  # Pausa execução
                 currentTime=time.time()
-                timeMax -= (currentTime - start_time)
-                if not (self.current_char_is_space()):
-                    player.note_off(self.current_note_playing, self.current_volume)  # Encerra a nota ao pausar
-                while self.is_paused:
-                    if not self.is_running:
-                        return
-                    time.sleep(0.1)
+                timeMax -= (currentTime - start_time) # atualiza tempo limite, considerando novo limite de tempo restante depois de pausar
+                self.termina_execucao_nota_atual(player) # Encerra a nota ao pausar
+                if(self.is_paused):
+                    self.aguarda_pause()
                 # Ao retomar, inicia a nota novamente
                 start_time = time.time()
                 currentTime=start_time
-                if not (self.current_char_is_space()):
-                    player.note_on(self.current_note_playing, self.current_volume)
+                self.inicia_execucao_nota_atual(player)
             else:
-                        currentTime=time.time()
+                currentTime=time.time() #se a nota continuar tocando, atualiza o tempo de execucao até o tempo limite
 
-                # Encerra a nota ao final do tempo
-        if not (self.current_char_is_space()):
-            player.note_off(self.current_note_playing, self.current_volume)
+        # Encerra a nota ao final do tempo
+        self.termina_execucao_nota_atual(player)
 
             
 
@@ -180,7 +186,6 @@ class Audio(QThread):
                 self.set_new_volume()
                 self.remaining_time = 60/self.current_velocity
                 self.controla_execucao_nota_atual(player)
-                
                 self.setNewCharIndex()  # Avança para a próxima nota
 
         finally:
