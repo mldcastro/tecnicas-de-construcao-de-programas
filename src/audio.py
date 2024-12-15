@@ -105,7 +105,7 @@ class Audio(QThread):
             return True
         else:
             return False
-        
+    
     def set_new_volume(self):
         if(self.sequence[self.current_char_index]=="+"):
             volume=2*self.current_volume
@@ -115,6 +115,7 @@ class Audio(QThread):
                 self.current_volume=volume
         elif(self.sequence[self.current_char_index]=="-"):
             self.current_volume=Audio.VOLUME_DEFAULT
+        
     
 
     def inicia_execucao_nota_atual(self, player: pygame.midi.Output): 
