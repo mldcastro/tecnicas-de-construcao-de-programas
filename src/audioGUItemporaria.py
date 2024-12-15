@@ -1,6 +1,6 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QTextEdit
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QTextEdit
+from PyQt6.QtCore import Qt
 from audio import Audio
 
 class AudioPlayerGUI(QWidget):
@@ -15,12 +15,12 @@ class AudioPlayerGUI(QWidget):
 
         layout = QVBoxLayout()
 
-        self.input_field = QTextEdit(self)  # Alteração: substituído QLineEdit por QTextEdit
+        self.input_field = QTextEdit(self)  # Substituído QLineEdit por QTextEdit
         self.input_field.setPlaceholderText("Digite uma sequência de A-Z")
         layout.addWidget(self.input_field)
 
         self.status_label = QLabel("Status: Parado", self)
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Ajuste para PyQt6
         layout.addWidget(self.status_label)
 
         self.play_button = QPushButton("Play", self)
@@ -45,7 +45,7 @@ class AudioPlayerGUI(QWidget):
         self.setLayout(layout)
 
     def play_audio(self):
-        sequence = self.input_field.toPlainText().strip().upper()  # Alteração: para QTextEdit, usa-se toPlainText()
+        sequence = self.input_field.toPlainText().strip().upper()  # Para QTextEdit, usa-se toPlainText()
         if not sequence:
             self.status_label.setText("Erro: Insira uma sequência válida!")
             return
@@ -96,4 +96,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     gui = AudioPlayerGUI()
     gui.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
