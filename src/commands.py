@@ -15,9 +15,10 @@ class Commands(StrEnum):
     REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_2 = "o"
     REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_3 = "u"
 
-    INC_VOLUME_1_OCTAVE = "r+"
-    DEC_VOLUME_1_OCTAVE = "r-"
+    INC_1_OCTAVE = "r+"
+    DEC_1_OCTAVE = "r-"
     INC_BPM_80_UNITS = "bpm+"
+    DEC_BPM_80_UNITS = "bpm-"
     RANDOM_BPM = ";"
 
     SILENCE = " "
@@ -39,11 +40,12 @@ class Commands(StrEnum):
             Caractere + (sinal de adição): Dobra o volume
             Caractere - (sinal de subtração): Restaura o volume para o padrão
             Letras I ou i, O ou o, U ou u: Se caractere anterior era NOTA (A a G), repete nota; Caso contrário, faz som de “Telefone tocando”
-            Letra R ou r seguida de sinal de adição: Aumenta volume em uma oitava
-            Letra R ou r seguida de sinal de subtração: Diminui volume em uma oitava
+            Letra R ou r seguida de sinal de adição: Aumenta a nota em uma oitava
+            Letra R ou r seguida de sinal de subtração: Diminui a nota em uma oitava
             Ponto de interrogação (?): Toca uma nota aleatória (de A a G)
             Caractere NL (nova linha): Troca instrumento
             Letras BPM seguidas de sinal de adição: Aumenta BPM em 80 unidades 
+            Letras BPM seguidas de sinal de subtração: Decrementa BPM em 80 unidades
             Ponto e vírgula (;): Atribui um BPM aleatório
             
             Outros caracteres: o caractere será ignorado, e o programa continuará a execução.
