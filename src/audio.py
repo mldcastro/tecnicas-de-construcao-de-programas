@@ -10,7 +10,10 @@ from src.commands import Commands
 
 class Audio(QThread):
     _DEFAULT_VOLUME = 50
+    _DEFAULT_OCTAVE = 0
     _MAX_VOLUME = 127
+    _MAX_OCTAVE = 48
+    _MIN_OCTAVE = -48
     _DEFAULT_BPM = 80
     _MAX_BPM = 600
     _DEFAULT_INSTRUMENT = 0  # Grand Piano
@@ -27,6 +30,7 @@ class Audio(QThread):
 
         self._current_instrument = self._DEFAULT_INSTRUMENT
         self._current_volume = self._DEFAULT_VOLUME
+        self._current_octave = self._DEFAULT_OCTAVE
         self._current_bpm = self._DEFAULT_BPM
         self._note_duration_sec = _bpm_to_period(self._DEFAULT_BPM)
 
@@ -44,6 +48,10 @@ class Audio(QThread):
     @property
     def current_volume(self) -> int:
         return self._current_volume
+
+    @property
+    def current_octave(self) -> int:
+        return self._current_octave
 
     @property
     def current_instruction(self) -> Optional[int]:
@@ -72,6 +80,15 @@ class Audio(QThread):
     def dec_volume(self, dec: int) -> None:
         self._current_volume = max(self._current_volume - dec, 0)
 
+    def set_octave(self, octave: int) -> None:
+        self._current_octave = min(max(octave, 0), self._MAX_OCTAVE)
+
+    def inc_octave(self, inc: int) -> None:
+        self._current_octave = min(self._current_octave + inc, self._MAX_OCTAVE)
+
+    def dec_octave(self, dec: int) -> None:
+        self._current_octave = max(self._current_octave - dec, self._MIN_OCTAVE)
+
     def set_bpm(self, v: int) -> None:
         self._current_bpm = min(v, self._MAX_BPM)
         self._note_duration_sec = _bpm_to_period(self._current_bpm)
@@ -80,6 +97,11 @@ class Audio(QThread):
         self._current_bpm = min(self._current_bpm + inc, self._MAX_BPM)
         self._note_duration_sec = _bpm_to_period(self._current_bpm)
         self._note_duration_sec = max(self._note_duration_sec, 0.1)
+
+    def dec_bpm(self, dec: int) -> None:
+        self._current_bpm = max(self._current_bpm - dec, 10)
+        self._note_duration_sec = _bpm_to_period(self._current_bpm)
+        self._note_duration_sec = min(self._note_duration_sec, 2)
 
     def run(self) -> None:
         pygame.midi.init()
@@ -119,6 +141,7 @@ class Audio(QThread):
 
         self.set_volume(self._DEFAULT_VOLUME)
         self.set_bpm(self._DEFAULT_BPM)
+        self.set_octave(self._DEFAULT_OCTAVE)
 
         self._previous_note = None
         self._current_note = None
@@ -211,15 +234,17 @@ class Audio(QThread):
         self.set_instrument(current_instrument)
 
     def _play_note(self, note: int) -> None:
+        note = note + (self._current_octave)
         self._midi_player.note_on(note=note, velocity=self._current_volume)
         time.sleep(self._note_duration_sec)
         self._midi_player.note_off(note=note, velocity=self._current_volume)
 
     def _run_config_command(self, command: str) -> None:
         map_ = {
-            Commands.INC_VOLUME_1_OCTAVE: lambda: self.inc_volume(12),
-            Commands.DEC_VOLUME_1_OCTAVE: lambda: self.dec_volume(12),
+            Commands.INC_1_OCTAVE: lambda: self.inc_octave(12),
+            Commands.DEC_1_OCTAVE: lambda: self.dec_octave(12),
             Commands.INC_BPM_80_UNITS: lambda: self.inc_bpm(80),
+            Commands.DEC_BPM_80_UNITS: lambda: self.dec_bpm(80),
             Commands.RANDOM_BPM: lambda: self.set_bpm(random.randint(60, 240)),
             Commands.SILENCE: lambda: time.sleep(0.1),
             Commands.CHANGE_INSTRUMENT: lambda: self.set_instrument(
