@@ -108,10 +108,10 @@ class Audio(QThread):
         self._midi_player = pygame.midi.Output(0)
         self.set_instrument(self._DEFAULT_INSTRUMENT)
 
-        sequence_len = len(self._processed_sequence)
-
         while True:
-            while self._should_play and self._current_instruction_index < sequence_len:
+            while self._should_play and self._current_instruction_index < len(
+                self._processed_sequence
+            ):
                 command = self._processed_sequence[self._current_instruction_index]
 
                 if command in Commands.mandatory():
@@ -125,7 +125,7 @@ class Audio(QThread):
                 self._previous_instruction_index = self._current_instruction_index
                 self._current_instruction_index += 1
 
-            if self._current_instruction_index == sequence_len:
+            if self._current_instruction_index == len(self._processed_sequence):
                 break
 
         self._midi_player.close()
