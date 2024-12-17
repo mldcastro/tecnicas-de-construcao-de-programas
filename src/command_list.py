@@ -15,6 +15,7 @@ class CommandListBox(QtWidgets.QWidget):
         self._text = QtWidgets.QLabel()
         self._text.setWordWrap(True)
         self._text.setTextFormat(Qt.TextFormat.RichText)
+        self._text.setFixedHeight(430)
 
         self._layout.addWidget(self._text)
 

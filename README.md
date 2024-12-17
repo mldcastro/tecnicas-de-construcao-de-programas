@@ -25,3 +25,31 @@ Na raíz deste repositório, rode o seguinte comando no terminal:
 ```bash
 poetry install --no-root
 ```
+
+## Rodando a aplicação
+
+```python
+poetry run python -m src
+```
+
+## Rodando o formatador, o linter e os testes
+
+```python
+poetry run ruff check src
+poetry run ruff format src
+poetry run pytest -v src
+```
+
+## Docker
+
+Para rodar a aplicação dentro de um Docker container, basta buildar a imagem presente neste repositório com:
+
+```bash
+docker build -t music-player:latest -f docker/Dockerfile .
+```
+
+E então rodar:
+
+```python
+docker container run --rm --mount type=bind,source=$(pwd),target=/tcp -it mldc/tcp/music-player:latest /bin/bash -c "poetry run pytest -s src"
+```
