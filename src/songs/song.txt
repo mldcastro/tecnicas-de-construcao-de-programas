@@ -1,2 +1,5 @@
-cdefgab          bpm+bpm+cdefgabcdefgab
-+cdefgab          +cdefgab
+aaa
+bbb
+ccc
+bpm+ddddddd
+eeeeeee
