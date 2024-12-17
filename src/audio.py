@@ -132,6 +132,8 @@ class Audio(QThread):
         self._midi_player = None
         pygame.midi.quit()
 
+        self._should_play = False
+
     def play(self) -> None:
         self.start()
 
@@ -164,9 +166,9 @@ class Audio(QThread):
 
         self._sequence = audio_string
         self._processed_sequence = list()
-        self._build_audio()
+        self._process_sequence_into_list_of_commands()
 
-    def _build_audio(self) -> None:
+    def _process_sequence_into_list_of_commands(self) -> None:
         length = len(self._sequence)
         max_length_command = max(len(i) for i in Commands)
         start = 0

@@ -32,7 +32,6 @@ class MusicPlayer(QtWidgets.QWidget):
 
         self._control_board_widget = ControlBoard()
         self._control_board_widget.play.connect(self._on_play_clicked)
-        self._control_board_widget.play.connect(self._audio_manager.start)
         self._control_board_widget.pause.connect(self._audio_manager.pause)
         self._control_board_widget.pause.connect(self._user_input_widget.unblock)
 

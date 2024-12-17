@@ -12,8 +12,8 @@ class TxtLoaderWidget(QtWidgets.QWidget):
         self._layout = QtWidgets.QHBoxLayout()
         self.setLayout(self._layout)
 
-        self._load_button = QtWidgets.QPushButton("Load .txt")
-        self._load_button.setFixedWidth(70)
+        self._load_button = QtWidgets.QPushButton("Carregar .txt")
+        self._load_button.setFixedWidth(80)
         self._load_button.clicked.connect(self._on_load_pressed)
 
         self._layout.addWidget(self._load_button)
