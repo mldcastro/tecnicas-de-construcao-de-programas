@@ -1,6 +1,8 @@
 import mido
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
 import random
+
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
 from src.commands import Commands
 
 
@@ -38,10 +40,9 @@ class MidiFileProcessor:
 
         user_input = user_input.lower()
 
+        self.track.clear()
         microseconds_per_beat = mido.bpm2tempo(self.bpm)
         self.track.append(mido.MetaMessage("set_tempo", tempo=microseconds_per_beat))
-
-        char_to_midi = self._get_note_mapping()
 
         i = 0
         while i < len(user_input):
@@ -61,7 +62,7 @@ class MidiFileProcessor:
                 )
                 i += len(Commands.DEC_BPM_80_UNITS.value)
             elif char in Commands.notes():
-                self._process_note(char_to_midi, char)
+                self._process_note(self.char_to_midi, char)
                 i += 1
             elif char == Commands.SILENCE.value:
                 self._process_pause()
@@ -73,7 +74,7 @@ class MidiFileProcessor:
                 self.volume = self._DEFAULT_VOLUME
                 i += 1
             elif char in Commands.repeat_commands():
-                self._process_instrument_change(user_input, i, char_to_midi)
+                self._process_instrument_change(user_input, i, self.char_to_midi)
                 i += 1
             elif user_input.startswith(Commands.INC_1_OCTAVE.value, i):
                 self.octave = min(self._MAX_OCTAVE, self.octave + 12)
@@ -81,9 +82,6 @@ class MidiFileProcessor:
             elif user_input.startswith(Commands.DEC_1_OCTAVE.value, i):
                 self.octave = max(self._MIN_OCTAVE, self.octave - 12)
                 i += len(Commands.DEC_1_OCTAVE.value)
-            elif char == Commands.RANDOM_NOTE.value:
-                self._process_random_note()
-                i += 1
             elif char == Commands.CHANGE_INSTRUMENT.value:
                 self._process_new_line()
                 i += 1
@@ -97,15 +95,17 @@ class MidiFileProcessor:
             else:
                 i += 1  # Ignora caracteres inválidos
 
-    def _get_note_mapping(self):
+    @property
+    def char_to_midi(self):
         return {
-            Commands.NOTE_LA.value: 69,
-            Commands.NOTE_SI.value: 71,
-            Commands.NOTE_DO.value: 60,
-            Commands.NOTE_RE.value: 62,
-            Commands.NOTE_MI.value: 64,
-            Commands.NOTE_FA.value: 65,
-            Commands.NOTE_SOL.value: 67,
+            Commands.NOTE_LA: 69,
+            Commands.NOTE_SI: 71,
+            Commands.NOTE_DO: 60,
+            Commands.NOTE_RE: 62,
+            Commands.NOTE_MI: 64,
+            Commands.NOTE_FA: 65,
+            Commands.NOTE_SOL: 67,
+            Commands.RANDOM_NOTE: random.randint(21, 109),
         }
 
     def _adjust_bpm(self, user_input, index, bpm, increase=True):
@@ -165,20 +165,6 @@ class MidiFileProcessor:
                 )
             )
         self.track.append(mido.Message("program_change", program=0, time=0))
-
-    def _process_random_note(self):
-        random_note = random.choice([note for note in range(21, 109)])
-        self.track.append(
-            mido.Message("note_on", note=random_note, velocity=self.volume, time=0)
-        )
-        self.track.append(
-            mido.Message(
-                "note_off",
-                note=random_note,
-                velocity=self.volume,
-                time=self.note_duration,
-            )
-        )
 
     def _process_new_line(self):
         self.instrument = random.randint(0, 127)
