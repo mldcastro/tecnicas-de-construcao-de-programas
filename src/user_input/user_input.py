@@ -19,7 +19,7 @@ class UserInputWidget(QtWidgets.QWidget):
         self._input = QtWidgets.QTextEdit()
         self._input.setFixedHeight(100)
         self._input.setFixedWidth(400)
-        self._input.setPlaceholderText("Type here")
+        self._input.setPlaceholderText("Digite aqui")
 
         self._ok_button = QtWidgets.QPushButton("OK")
         self._ok_button.setFixedWidth(70)
