@@ -1,0 +1,1477 @@
+#################################################################################################
+# __main__.py
+#################################################################################################
+
+import sys
+
+from PyQt6 import QtWidgets
+from typing import Never
+
+from .music_player import MusicPlayer
+
+
+def main() -> Never:
+    app = QtWidgets.QApplication(sys.argv)
+
+    music_player = MusicPlayer()
+    music_player.resize(640, 480)
+    music_player.setWindowTitle("Music Player")
+    music_player.show()
+
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
+
+#################################################################################################
+# audio.py
+#################################################################################################
+
+import pygame.midi
+import time
+import random
+
+from typing import Optional
+from PyQt6.QtCore import QThread, pyqtSignal
+
+from src.commands import Commands
+
+
+class Audio(QThread):
+    _DEFAULT_VOLUME = 50
+    _DEFAULT_OCTAVE = 0
+    _MAX_VOLUME = 127
+    _MAX_OCTAVE = 48
+    _MIN_OCTAVE = -48
+    _DEFAULT_BPM = 80
+    _MAX_BPM = 600
+    _DEFAULT_INSTRUMENT = 0  # Grand Piano
+
+    instrument_changed = pyqtSignal(int)
+
+    def __init__(self, sequence: Optional[list[str]] = None) -> None:
+        super().__init__()
+
+        self._sequence = sequence
+        self._processed_sequence = list()
+
+        self._midi_player: Optional[pygame.midi.Output] = None
+
+        self._current_instrument = self._DEFAULT_INSTRUMENT
+        self._current_volume = self._DEFAULT_VOLUME
+        self._current_octave = self._DEFAULT_OCTAVE
+        self._current_bpm = self._DEFAULT_BPM
+        self._note_duration_sec = _bpm_to_period(self._DEFAULT_BPM)
+
+        self._previous_note: Optional[str] = None
+        self._current_note: Optional[str] = None
+        self._previous_instruction_index: Optional[int] = None
+        self._current_instruction_index = 0
+
+        self._should_play = False
+
+    @property
+    def current_instrument(self) -> int:
+        return self._current_instrument
+
+    @property
+    def current_volume(self) -> int:
+        return self._current_volume
+
+    @property
+    def current_octave(self) -> int:
+        return self._current_octave
+
+    @property
+    def current_instruction(self) -> Optional[int]:
+        if len(self._processed_sequence) == 0:
+            return None
+        return self._processed_sequence[self._current_instruction_index]
+
+    @property
+    def should_play(self) -> bool:
+        return self._should_play
+
+    def set_should_play(self, v: bool) -> None:
+        self._should_play = v
+
+    def set_instrument(self, instrument: int) -> None:
+        self._current_instrument = instrument
+        self._midi_player.set_instrument(self._current_instrument)
+        self.instrument_changed.emit(self.current_instrument)
+
+    def set_volume(self, volume: int) -> None:
+        self._current_volume = min(max(volume, 0), self._MAX_VOLUME)
+
+    def inc_volume(self, inc: int) -> None:
+        self._current_volume = min(self._current_volume + inc, self._MAX_VOLUME)
+
+    def dec_volume(self, dec: int) -> None:
+        self._current_volume = max(self._current_volume - dec, 0)
+
+    def set_octave(self, octave: int) -> None:
+        self._current_octave = min(max(octave, 0), self._MAX_OCTAVE)
+
+    def inc_octave(self, inc: int) -> None:
+        self._current_octave = min(self._current_octave + inc, self._MAX_OCTAVE)
+
+    def dec_octave(self, dec: int) -> None:
+        self._current_octave = max(self._current_octave - dec, self._MIN_OCTAVE)
+
+    def set_bpm(self, v: int) -> None:
+        self._current_bpm = min(v, self._MAX_BPM)
+        self._note_duration_sec = _bpm_to_period(self._current_bpm)
+
+    def inc_bpm(self, inc: int) -> None:
+        self._current_bpm = min(self._current_bpm + inc, self._MAX_BPM)
+        self._note_duration_sec = _bpm_to_period(self._current_bpm)
+        self._note_duration_sec = max(self._note_duration_sec, 0.1)
+
+    def dec_bpm(self, dec: int) -> None:
+        self._current_bpm = max(self._current_bpm - dec, 10)
+        self._note_duration_sec = _bpm_to_period(self._current_bpm)
+        self._note_duration_sec = min(self._note_duration_sec, 2)
+
+    def run(self) -> None:
+        pygame.midi.init()
+        self._midi_player = pygame.midi.Output(0)
+        self.set_instrument(self._DEFAULT_INSTRUMENT)
+
+        while True:
+            while self._should_play and self._current_instruction_index < len(
+                self._processed_sequence
+            ):
+                command = self._processed_sequence[self._current_instruction_index]
+
+                if command in Commands.mandatory():
+                    self._handle_mandatory_command(
+                        command,
+                        self._get_previous_command(),
+                    )
+                else:
+                    self._run_config_command(command)
+
+                self._previous_instruction_index = self._current_instruction_index
+                self._current_instruction_index += 1
+
+            if self._current_instruction_index == len(self._processed_sequence):
+                break
+
+        self._midi_player.close()
+        self._midi_player = None
+        pygame.midi.quit()
+
+        self._should_play = False
+
+    def play(self) -> None:
+        self.start()
+
+    def restart(self) -> None:
+        if self._midi_player is not None:
+            self.set_instrument(self._DEFAULT_INSTRUMENT)
+
+        self.set_volume(self._DEFAULT_VOLUME)
+        self.set_bpm(self._DEFAULT_BPM)
+        self.set_octave(self._DEFAULT_OCTAVE)
+
+        self._previous_note = None
+        self._current_note = None
+        self._previous_instruction_index = 0
+        self._current_instruction_index = 0
+
+        self._should_play = False
+
+    def pause(self) -> None:
+        self._should_play = False
+
+    def set_sequence(self, audio_string: str) -> None:
+        self.set_volume(self._DEFAULT_VOLUME)
+        self.set_bpm(self._DEFAULT_BPM)
+
+        self._previous_note = None
+        self._current_note = None
+        self._previous_instruction_index = None
+        self._current_instruction_index = 0
+
+        self._sequence = audio_string
+        self._processed_sequence = list()
+        self._process_sequence_into_list_of_commands()
+
+    def _process_sequence_into_list_of_commands(self) -> None:
+        length = len(self._sequence)
+        max_length_command = max(len(i) for i in Commands)
+        start = 0
+        end = 0
+
+        while start < length:
+            end += max_length_command
+            while end - start > 0:
+                if self._sequence[start:end].lower() in list(Commands):
+                    self._processed_sequence.append(self._sequence[start:end].lower())
+                    break
+                end -= 1
+
+            if end == start:
+                self._processed_sequence.append(self._sequence[start : end + 1].lower())
+
+            start += max(end - start, 1)
+            end += start + max_length_command
+
+    def _get_previous_command(self) -> Optional[str]:
+        if self._previous_instruction_index is not None:
+            return self._processed_sequence[self._previous_instruction_index]
+
+    def _handle_mandatory_command(
+        self, command: str, prev_command: Optional[str]
+    ) -> None:
+        if self._midi_player is None:
+            return None
+
+        midi_id = self._map_command_char_to_midi(command)
+
+        if midi_id is None:
+            midi_id = self._current_note
+
+            if prev_command not in Commands.notes():
+                return self._make_telephone_ring()
+
+        self._previous_note = self._current_note
+        self._current_note = midi_id
+
+        self._play_note(midi_id)
+
+    def _map_command_char_to_midi(self, char: str) -> int:
+        map_ = {
+            Commands.NOTE_DO: 60,
+            Commands.NOTE_RE: 62,
+            Commands.NOTE_MI: 64,
+            Commands.NOTE_FA: 65,
+            Commands.NOTE_SOL: 67,
+            Commands.NOTE_LA: 69,
+            Commands.NOTE_SI: 71,
+            Commands.RANDOM_NOTE: random.randint(0, 127),
+        }
+
+        return map_.get(char)
+
+    def _make_telephone_ring(self) -> None:
+        current_instrument = self.current_instrument
+
+        LA_ID = self._map_command_char_to_midi(Commands.NOTE_LA)
+        TELEPHONE_RING_ID = 124
+
+        self.set_instrument(TELEPHONE_RING_ID)
+        self._play_note(LA_ID)
+        self.set_instrument(current_instrument)
+
+    def _play_note(self, note: int) -> None:
+        note = note + (self._current_octave)
+        self._midi_player.note_on(note=note, velocity=self._current_volume)
+        time.sleep(self._note_duration_sec)
+        self._midi_player.note_off(note=note, velocity=self._current_volume)
+
+    def _run_config_command(self, command: str) -> None:
+        map_ = {
+            Commands.INC_1_OCTAVE: lambda: self.inc_octave(12),
+            Commands.DEC_1_OCTAVE: lambda: self.dec_octave(12),
+            Commands.INC_BPM_80_UNITS: lambda: self.inc_bpm(80),
+            Commands.DEC_BPM_80_UNITS: lambda: self.dec_bpm(80),
+            Commands.RANDOM_BPM: lambda: self.set_bpm(random.randint(60, 240)),
+            Commands.SILENCE: lambda: time.sleep(0.1),
+            Commands.CHANGE_INSTRUMENT: lambda: self.set_instrument(
+                random.randint(0, 127)
+            ),
+            Commands.DOUBLE_VOLUME: lambda: self.inc_volume(self._current_volume),
+            Commands.RESET_VOLUME: lambda: self.set_volume(self._DEFAULT_VOLUME),
+        }
+
+        command_func = map_.get(command.lower(), lambda: None)
+        command_func()
+
+
+def _bpm_to_period(f: int) -> float:
+    ONE_MINUTE_SEC = 60
+    return 1 / (f / ONE_MINUTE_SEC)
+
+#################################################################################################
+# command_list.py
+#################################################################################################
+
+from prettytable import PrettyTable
+from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt
+
+from .commands import Commands
+
+
+class CommandListBox(QtWidgets.QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._layout = QtWidgets.QVBoxLayout()
+        self.setLayout(self._layout)
+
+        self._text = QtWidgets.QLabel()
+        self._text.setWordWrap(True)
+        self._text.setTextFormat(Qt.TextFormat.RichText)
+        self._text.setFixedHeight(430)
+
+        self._layout.addWidget(self._text)
+
+    def display(self) -> None:
+        self._text.setText(self._commands_explanation_to_html())
+        self.show()
+
+    @staticmethod
+    def _commands_explanation_as_list(col_separator: str) -> list[list[str]]:
+        lines = [s.strip() for s in Commands.explanation().splitlines()]
+        rows = [line.split(col_separator) for line in lines]
+        return [col for col in rows if col != [""]]
+
+    def _commands_explanation_to_html(self, col_separator: str = ":") -> str:
+        explanation_as_list = self._commands_explanation_as_list(col_separator)
+
+        table = PrettyTable(
+            field_names=["Comando", "Descrição"],
+            title="LISTA DE COMANDOS",
+            align="l",
+            right_padding_width=3,
+        )
+        table.add_rows(explanation_as_list)
+
+        # The get_html_string method does not takes into account the left-alignment
+        # we did before, so here we replace the "center" alignment with "left" to
+        # ensure the left-alignment is preserved.
+        return table.get_html_string(format=True).replace("center", "left")
+
+#################################################################################################
+# commands.py
+#################################################################################################
+
+from enum import StrEnum
+
+
+class Commands(StrEnum):
+    NOTE_LA = "a"
+    NOTE_SI = "b"
+    NOTE_DO = "c"
+    NOTE_RE = "d"
+    NOTE_MI = "e"
+    NOTE_FA = "f"
+    NOTE_SOL = "g"
+    RANDOM_NOTE = "?"
+
+    REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_1 = "i"
+    REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_2 = "o"
+    REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_3 = "u"
+
+    INC_1_OCTAVE = "r+"
+    DEC_1_OCTAVE = "r-"
+    INC_BPM_80_UNITS = "bpm+"
+    DEC_BPM_80_UNITS = "bpm-"
+    RANDOM_BPM = ";"
+
+    SILENCE = " "
+    CHANGE_INSTRUMENT = "\n"
+    DOUBLE_VOLUME = "+"
+    RESET_VOLUME = "-"
+
+    @staticmethod
+    def explanation() -> str:
+        return """
+            Letra A ou a: Nota Lá                   
+            Letra B ou b: Nota Si                   
+            Letra C ou c: Nota Dó                   
+            Letra D ou d: Nota Ré                   
+            Letra E ou e: Nota Mi                   
+            Letra F ou f: Nota Fá                   
+            Letra G ou g: Nota Sol                  
+            Caractere Espaço: Silêncio ou pausa
+            Caractere + (sinal de adição): Dobra o volume
+            Caractere - (sinal de subtração): Restaura o volume para o padrão
+            Letras I ou i, O ou o, U ou u: Se caractere anterior era NOTA (A a G), repete nota; Caso contrário, faz som de “Telefone tocando”
+            Letra R ou r seguida de sinal de adição: Aumenta a nota em uma oitava
+            Letra R ou r seguida de sinal de subtração: Diminui a nota em uma oitava
+            Ponto de interrogação (?): Toca uma nota aleatória (de A a G)
+            Caractere NL (nova linha): Troca instrumento
+            Letras BPM seguidas de sinal de adição: Aumenta BPM em 80 unidades 
+            Letras BPM seguidas de sinal de subtração: Decrementa BPM em 80 unidades
+            Ponto e vírgula (;): Atribui um BPM aleatório
+            
+            Outros caracteres: o caractere será ignorado, e o programa continuará a execução.
+        """  # noqa: E501
+
+    @classmethod
+    def notes(cls) -> list["Commands"]:
+        return [
+            cls.NOTE_LA,
+            cls.NOTE_SI,
+            cls.NOTE_DO,
+            cls.NOTE_RE,
+            cls.NOTE_MI,
+            cls.NOTE_FA,
+            cls.NOTE_SOL,
+            cls.RANDOM_NOTE,
+        ]
+
+    @classmethod
+    def repeat_commands(cls) -> list["Commands"]:
+        return [
+            cls.REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_1,
+            cls.REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_2,
+            cls.REPEAT_NOTE_OR_CELL_RING_TONE_CHAR_3,
+        ]
+
+    @classmethod
+    def mandatory(cls) -> list["Commands"]:
+        """List commands where AT LEAST one of them must be present in the input."""
+
+        return cls.notes() + cls.repeat_commands()
+
+#################################################################################################
+# control_board.py
+#################################################################################################
+
+from typing import Optional
+from PyQt6 import QtWidgets, QtGui, QtCore
+
+
+class PlayPauseButton(QtWidgets.QAbstractButton):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._play_image = QtGui.QPixmap("src/images/play.png").scaled(
+            QtCore.QSize(100, 100)
+        )
+        self._pause_image = QtGui.QPixmap("src/images/pause.png").scaled(
+            QtCore.QSize(100, 100)
+        )
+
+        self._icon = self._play_image
+        self.setIcon(QtGui.QIcon(self._icon))
+        self.setFixedSize(self._icon.size())
+        self.clicked.connect(self.toggle_icon)
+
+    def toggle_icon(self) -> None:
+        if self._icon == self._play_image:
+            self._icon = self._pause_image
+        else:
+            self._icon = self._play_image
+
+        self.setIcon(QtGui.QIcon(self._icon))
+        self.update()
+
+    def sizeHint(self) -> QtCore.QSize:
+        return self._icon.size()
+
+    def paintEvent(self, e: Optional[QtGui.QPaintEvent]) -> None:
+        painter = QtGui.QPainter(self)
+        painter.drawPixmap(0, 0, self._icon)
+
+
+class RestartButton(QtWidgets.QAbstractButton):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._image = QtGui.QPixmap("src/images/restart.png").scaled(
+            QtCore.QSize(100, 100)
+        )
+        self._image_blocked = QtGui.QPixmap("src/images/restart_blocked.png").scaled(
+            QtCore.QSize(100, 100)
+        )
+
+        self._icon = self._image
+        self.setIcon(QtGui.QIcon(self._icon))
+        self.setFixedSize(self._icon.size())
+
+        self._is_blocked = False
+
+    @property
+    def is_blocked(self) -> bool:
+        return self._is_blocked
+
+    def block(self) -> None:
+        self.setDisabled(True)
+        self._icon = self._image_blocked
+        self.setIcon(QtGui.QIcon(self._icon))
+        self.update()
+
+        self._is_blocked = True
+
+    def unblock(self) -> None:
+        self.setDisabled(False)
+        self._icon = self._image
+        self.setIcon(QtGui.QIcon(self._icon))
+        self.update()
+
+        self._is_blocked = False
+
+    def sizeHint(self) -> QtCore.QSize:
+        return self._icon.size()
+
+    def paintEvent(self, e: Optional[QtGui.QPaintEvent]) -> None:
+        painter = QtGui.QPainter(self)
+        painter.drawPixmap(0, 0, self._icon)
+
+
+class ControlBoard(QtWidgets.QWidget):
+    play = QtCore.pyqtSignal()
+    pause = QtCore.pyqtSignal()
+    restart = QtCore.pyqtSignal()
+    save = QtCore.pyqtSignal()
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._layout = QtWidgets.QVBoxLayout(self)
+        self.setLayout(self._layout)
+
+        self._play_pause_button = PlayPauseButton()
+        self._play_pause_button.clicked.connect(self._on_play_pause_button_clicked)
+
+        self._restart_button = RestartButton()
+        self._restart_button.clicked.connect(self._on_restart_button_clicked)
+
+        self._save_midi_button = QtWidgets.QPushButton("Salvar como MIDI")
+        self._save_midi_button.setEnabled(False)
+        self._save_midi_button.clicked.connect(self._on_save_as_midi_clicked)
+
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addWidget(self._play_pause_button)
+        button_layout.addWidget(self._restart_button)
+        self._layout.addLayout(button_layout)
+        self._layout.addWidget(self._save_midi_button)
+
+        self._is_playing = False
+
+    @property
+    def is_playing(self) -> bool:
+        return self._is_playing
+
+    def block_save_button(self) -> None:
+        self._save_midi_button.setDisabled(True)
+
+    def unblock_save_button(self) -> None:
+        self._save_midi_button.setDisabled(False)
+
+    def _on_play_pause_button_clicked(self) -> None:
+        self._is_playing = not self._is_playing
+
+        if self._is_playing:
+            self._restart_button.block()
+            self.block_save_button()
+            self.play.emit()
+        else:
+            self._restart_button.unblock()
+            self.unblock_save_button()
+            self.pause.emit()
+
+    def _on_restart_button_clicked(self) -> None:
+        self.restart.emit()
+
+    def _on_save_as_midi_clicked(self):
+        self.save.emit()
+
+    def to_play_state(self) -> None:
+        if not self._is_playing:
+            return
+
+        self._play_pause_button.click()
+
+#################################################################################################
+# midi_file_processor.py
+#################################################################################################
+
+import mido
+import random
+
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+from src.commands import Commands
+
+
+class MidiFileProcessor:
+    _DEFAULT_VOLUME = 50
+    _DEFAULT_OCTAVE = 0
+    _MAX_VOLUME = 127
+    _MAX_OCTAVE = 48
+    _MIN_OCTAVE = -48
+    _DEFAULT_BPM = 80
+    _MAX_BPM = 600
+    _DEFAULT_INSTRUMENT = 0  # Grand Piano
+
+    def __init__(self):
+        self.midi_file = mido.MidiFile()
+        self.ticks_per_beat = self.midi_file.ticks_per_beat
+
+        self.track = mido.MidiTrack()
+        self.midi_file.tracks.append(self.track)
+
+        self.bpm = self._DEFAULT_BPM
+        self.octave = self._DEFAULT_OCTAVE
+        self.instrument = self._DEFAULT_INSTRUMENT
+        self.note_duration = self.ticks_per_beat
+        self.volume = self._DEFAULT_VOLUME
+
+    def convert_user_input_to_midi(self, user_input: str, parent_widget=None):
+        if not user_input:
+            QMessageBox.warning(
+                parent_widget,
+                "Erro de Entrada",
+                "Nenhuma entrada fornecida para a conversão em MIDI.",
+            )
+            return
+
+        user_input = user_input.lower()
+
+        self.track.clear()
+        microseconds_per_beat = mido.bpm2tempo(self.bpm)
+        self.track.append(mido.MetaMessage("set_tempo", tempo=microseconds_per_beat))
+
+        i = 0
+        while i < len(user_input):
+            char = user_input[i]
+            if user_input.startswith(Commands.INC_BPM_80_UNITS.value.lower(), i):
+                self.bpm = self._adjust_bpm(user_input, i, self.bpm)
+                microseconds_per_beat = mido.bpm2tempo(self.bpm)
+                self.track.append(
+                    mido.MetaMessage("set_tempo", tempo=microseconds_per_beat)
+                )
+                i += len(Commands.INC_BPM_80_UNITS.value)
+            elif user_input.startswith(Commands.DEC_BPM_80_UNITS.value.lower(), i):
+                self.bpm = self._adjust_bpm(user_input, i, self.bpm, increase=False)
+                microseconds_per_beat = mido.bpm2tempo(self.bpm)
+                self.track.append(
+                    mido.MetaMessage("set_tempo", tempo=microseconds_per_beat)
+                )
+                i += len(Commands.DEC_BPM_80_UNITS.value)
+            elif char in Commands.notes():
+                self._process_note(self.char_to_midi, char)
+                i += 1
+            elif char == Commands.SILENCE.value:
+                self._process_pause()
+                i += 1
+            elif char == Commands.DOUBLE_VOLUME.value:
+                self.volume = min(127, self.volume + self.volume)
+                i += 1
+            elif char == Commands.RESET_VOLUME.value:
+                self.volume = self._DEFAULT_VOLUME
+                i += 1
+            elif char in Commands.repeat_commands():
+                self._process_instrument_change(user_input, i, self.char_to_midi)
+                i += 1
+            elif user_input.startswith(Commands.INC_1_OCTAVE.value, i):
+                self.octave = min(self._MAX_OCTAVE, self.octave + 12)
+                i += len(Commands.INC_1_OCTAVE.value)
+            elif user_input.startswith(Commands.DEC_1_OCTAVE.value, i):
+                self.octave = max(self._MIN_OCTAVE, self.octave - 12)
+                i += len(Commands.DEC_1_OCTAVE.value)
+            elif char == Commands.CHANGE_INSTRUMENT.value:
+                self._process_new_line()
+                i += 1
+            elif char == Commands.RANDOM_BPM.value:
+                self.bpm = random.randint(40, 200)
+                microseconds_per_beat = mido.bpm2tempo(self.bpm)
+                self.track.append(
+                    mido.MetaMessage("set_tempo", tempo=microseconds_per_beat)
+                )
+                i += 1
+            else:
+                i += 1  # Ignora caracteres inválidos
+
+    @property
+    def char_to_midi(self):
+        return {
+            Commands.NOTE_LA: 69,
+            Commands.NOTE_SI: 71,
+            Commands.NOTE_DO: 60,
+            Commands.NOTE_RE: 62,
+            Commands.NOTE_MI: 64,
+            Commands.NOTE_FA: 65,
+            Commands.NOTE_SOL: 67,
+            Commands.RANDOM_NOTE: random.randint(21, 109),
+        }
+
+    def _adjust_bpm(self, user_input, index, bpm, increase=True):
+        adjustment = (
+            int(user_input[index + 4 :]) if user_input[index + 4 :].isdigit() else 80
+        )
+        new_bpm = bpm + adjustment if increase else bpm - adjustment
+        if new_bpm <= 0 or new_bpm > self._MAX_BPM:
+            return bpm
+        else:
+            return new_bpm
+
+    def _process_note(self, char_to_midi, char):
+        note = char_to_midi[char] + self.octave
+        self.track.append(
+            mido.Message("note_on", note=note, velocity=self.volume, time=0)
+        )
+        self.track.append(
+            mido.Message(
+                "note_off", note=note, velocity=self.volume, time=self.note_duration
+            )
+        )
+
+    def _process_pause(self):
+        self.track.append(
+            mido.Message("note_on", note=0, velocity=0, time=self.note_duration)
+        )
+        self.track.append(
+            mido.Message(
+                "note_off", note=0, velocity=self.volume, time=self.note_duration
+            )
+        )
+
+    def _process_instrument_change(self, user_input, index, char_to_midi):
+        if user_input[index - 1] in char_to_midi:
+            note = char_to_midi[user_input[index - 1]] + self.octave
+            self.track.append(
+                mido.Message("note_on", note=note, velocity=self.volume, time=0)
+            )
+            self.track.append(
+                mido.Message(
+                    "note_off", note=note, velocity=self.volume, time=self.note_duration
+                )
+            )
+        else:
+            self.track.append(mido.Message("program_change", program=124, time=0))
+            random_note = random.choice([char_to_midi[ch] for ch in char_to_midi])
+            self.track.append(
+                mido.Message("note_on", note=random_note, velocity=self.volume, time=0)
+            )
+            self.track.append(
+                mido.Message(
+                    "note_off",
+                    note=random_note,
+                    velocity=self.volume,
+                    time=self.note_duration,
+                )
+            )
+        self.track.append(mido.Message("program_change", program=0, time=0))
+
+    def _process_new_line(self):
+        self.instrument = random.randint(0, 127)
+        self.track.append(mido.Message("program_change", program=self.instrument, time=0))
+
+    def _save_midi_file(self, parent_widget):
+        file_name, _ = QFileDialog.getSaveFileName(
+            parent_widget, "Salvar Arquivo MIDI", "", "MIDI Files (*.mid)"
+        )
+        if file_name:
+            self.midi_file.save(file_name)
+            QMessageBox.information(
+                parent_widget, "Salvo", f"Arquivo MIDI salvo em: {file_name}"
+            )
+
+#################################################################################################
+# midi.py
+#################################################################################################
+
+from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+
+class MidiInstrumentBox(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        self.instrument_label = QLabel()
+        layout.addWidget(self.instrument_label)
+
+        self.instrument_names = self._get_instrument_names()
+        self.set_instrument(0)
+
+    def set_instrument(self, instrument: int):
+        instrument_name = self.instrument_names.get(instrument, "Desconhecido")
+        self.instrument_label.setText(f"Instrumento: {instrument_name}")
+
+    def _get_instrument_names(self):
+        return {
+            0: "Piano Acústico",
+            1: "Piano Acústico Brilhante",
+            2: "Piano Elétrico",
+            3: "Piano Elétrico Honky-Tonk",
+            4: "Piano Elétrico Rhodes",
+            5: "Piano Elétrico Chorused",
+            6: "Harpsichord",
+            7: "Clavinet",
+            8: "Celesta",
+            9: "Glockenspiel",
+            10: "Music Box",
+            11: "Vibraphone",
+            12: "Marimba",
+            13: "Xylophone",
+            14: "Tubular Bells",
+            15: "Dulcimer",
+            16: "Drawbar Organ",
+            17: "Percussive Organ",
+            18: "Rock Organ",
+            19: "Church Organ",
+            20: "Reed Organ",
+            21: "Accordion",
+            22: "Harmonica",
+            23: "Tango Accordion",
+            24: "Acoustic Guitar (nylon)",
+            25: "Acoustic Guitar (steel)",
+            26: "Electric Guitar (jazz)",
+            27: "Electric Guitar (clean)",
+            28: "Electric Guitar (muted)",
+            29: "Overdriven Guitar",
+            30: "Distortion Guitar",
+            31: "Guitar Harmonics",
+            32: "Acoustic Bass",
+            33: "Electric Bass (finger)",
+            34: "Electric Bass (pick)",
+            35: "Fretless Bass",
+            36: "Slap Bass 1",
+            37: "Slap Bass 2",
+            38: "Synth Bass 1",
+            39: "Synth Bass 2",
+            40: "Violin",
+            41: "Viola",
+            42: "Cello",
+            43: "Contrabass",
+            44: "Tremolo Strings",
+            45: "Pizzicato Strings",
+            46: "Orchestral Harp",
+            47: "Timpani",
+            48: "String Ensemble 1",
+            49: "String Ensemble 2",
+            50: "SynthStrings 1",
+            51: "SynthStrings 2",
+            52: "Choir Aahs",
+            53: "Voice Oohs",
+            54: "Synth Voice",
+            55: "Orchestra Hit",
+            56: "Trumpet",
+            57: "Trombone",
+            58: "Tuba",
+            59: "Muted Trumpet",
+            60: "French Horn",
+            61: "Brass Section",
+            62: "SynthBrass 1",
+            63: "SynthBrass 2",
+            64: "Soprano Sax",
+            65: "Alto Sax",
+            66: "Tenor Sax",
+            67: "Baritone Sax",
+            68: "Oboe",
+            69: "English Horn",
+            70: "Bassoon",
+            71: "Clarinet",
+            72: "Piccolo",
+            73: "Flute",
+            74: "Recorder",
+            75: "Pan Flute",
+            76: "Blown Bottle",
+            77: "Shakuhachi",
+            78: "Whistle",
+            79: "Ocarina",
+            80: "Lead 1 (square)",
+            81: "Lead 2 (sawtooth)",
+            82: "Lead 3 (calliope)",
+            83: "Lead 4 (chiff)",
+            84: "Lead 5 (charang)",
+            85: "Lead 6 (voice)",
+            86: "Lead 7 (fifths)",
+            87: "Lead 8 (bass + lead)",
+            88: "Pad 1 (new age)",
+            89: "Pad 2 (warm)",
+            90: "Pad 3 (polysynth)",
+            91: "Pad 4 (choir)",
+            92: "Pad 5 (bowed)",
+            93: "Pad 6 (metallic)",
+            94: "Pad 7 (halo)",
+            95: "Pad 8 (sweep)",
+            96: "FX 1 (rain)",
+            97: "FX 2 (soundtrack)",
+            98: "FX 3 (crystal)",
+            99: "FX 4 (atmosphere)",
+            100: "FX 5 (brightness)",
+            101: "FX 6 (goblins)",
+            102: "FX 7 (echoes)",
+            103: "FX 8 (sci-fi)",
+            104: "Sitar",
+            105: "Banjo",
+            106: "Shamisen",
+            107: "Koto",
+            108: "Kalimba",
+            109: "Bagpipe",
+            110: "Fiddle",
+            111: "Shanai",
+            112: "Tinkle Bell",
+            113: "Agogo",
+            114: "Steel Drums",
+            115: "Woodblock",
+            116: "Taiko Drum",
+            117: "Melodic Tom",
+            118: "Synth Drum",
+            119: "Reverse Cymbal",
+            120: "Guitar Fret Noise",
+            121: "Breath Noise",
+            122: "Seashore",
+            123: "Bird Tweet",
+            124: "Telephone Ring",
+            125: "Helicopter",
+            126: "Applause",
+            127: "Gunshot",
+        }
+
+#################################################################################################
+# music_player.py
+#################################################################################################
+
+from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt
+
+from .user_input import UserInputWidget
+from .command_list import CommandListBox
+from .audio import Audio
+from .control_board import ControlBoard
+from .midi import MidiInstrumentBox
+from .midi_file_processor import MidiFileProcessor
+
+
+class MusicPlayer(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self._layout = QtWidgets.QGridLayout(self)
+
+        self._command_list_box = CommandListBox()
+
+        self._user_input_widget = UserInputWidget()
+        self._user_input_widget.value_changed.connect(self._feed_string)
+
+        self._audio_manager = Audio()
+        self._audio_manager.finished.connect(self._on_music_ended)
+
+        self._midi_processor = MidiFileProcessor()
+
+        self._midi_instrument_box = MidiInstrumentBox()
+        self._audio_manager.instrument_changed.connect(
+            self._midi_instrument_box.set_instrument
+        )
+
+        self._control_board_widget = ControlBoard()
+        self._control_board_widget.play.connect(self._on_play_clicked)
+        self._control_board_widget.pause.connect(self._audio_manager.pause)
+        self._control_board_widget.pause.connect(self._user_input_widget.unblock)
+
+        self._control_board_widget.restart.connect(self._audio_manager.restart)
+
+        self._control_board_widget.save.connect(self._save)
+        self._user_input_widget.value_changed.connect(
+            self._control_board_widget.unblock_save_button
+        )
+
+        self._layout.addWidget(self._user_input_widget, 0, 0, Qt.AlignmentFlag.AlignLeft)
+        self._layout.addWidget(self._command_list_box, 1, 0, 1, 2)
+        self._layout.addWidget(
+            self._control_board_widget, 0, 1, Qt.AlignmentFlag.AlignCenter
+        )
+        self._layout.addWidget(self._midi_instrument_box, 0, 1, Qt.AlignmentFlag.AlignTop)
+
+        self._command_list_box.display()
+
+    def _feed_string(self) -> None:
+        self._audio_manager.set_sequence(self._user_input_widget.value)
+        self._midi_processor.convert_user_input_to_midi(
+            self._user_input_widget.value, self
+        )
+
+    def _on_play_clicked(self) -> None:
+        self._user_input_widget.block()
+        self._audio_manager.set_should_play(True)
+        self._audio_manager.play()
+
+    def _on_music_ended(self) -> None:
+        self._control_board_widget.to_play_state()
+        self._audio_manager.restart()
+
+    def _save(self) -> None:
+        self._midi_processor._save_midi_file(self)
+
+
+#################################################################################################
+# user_input/user_input.py
+#################################################################################################
+
+from typing import Optional
+from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt, pyqtSignal
+
+from .input_error import InputException, InputErrorBox
+from .input_validator import InputValidator
+from .txt_loader import TxtLoaderWidget
+
+
+class UserInputWidget(QtWidgets.QWidget):
+    value_changed = pyqtSignal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._layout = QtWidgets.QGridLayout()
+        self.setLayout(self._layout)
+
+        self._input = QtWidgets.QTextEdit()
+        self._input.setFixedHeight(100)
+        self._input.setFixedWidth(400)
+        self._input.setPlaceholderText("Digite aqui")
+
+        self._ok_button = QtWidgets.QPushButton("OK")
+        self._ok_button.setFixedWidth(70)
+        self._ok_button.clicked.connect(self._on_ok_pressed)
+
+        self._txt_loader = TxtLoaderWidget()
+        self._txt_loader.file_loaded.connect(self._on_file_loaded)
+
+        self._error_box = InputErrorBox()
+        self._error_box.hide()
+
+        self._layout.addWidget(self._input)
+        self._layout.addWidget(self._ok_button, 1, 0, Qt.AlignmentFlag.AlignLeft)
+        self._layout.addWidget(self._txt_loader, 1, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._layout.addWidget(self._error_box, 2, 0)
+
+        self._value: Optional[str] = None
+        self._is_valid: Optional[bool] = None
+        self._is_blocked = False
+
+    @property
+    def value(self) -> Optional[str]:
+        return self._value
+
+    @property
+    def is_blocked(self) -> bool:
+        return self._is_blocked
+
+    @property
+    def is_valid(self) -> Optional[bool]:
+        return self._is_valid
+
+    def block(self) -> None:
+        self._input.setDisabled(True)
+        self._ok_button.setDisabled(True)
+        self._txt_loader.setDisabled(True)
+        self._is_blocked = True
+
+    def unblock(self) -> None:
+        self._input.setDisabled(False)
+        self._ok_button.setDisabled(False)
+        self._txt_loader.setDisabled(False)
+        self._is_blocked = False
+
+    def _validate_input(self) -> None:
+        InputValidator.validate(self._input.toPlainText())
+
+    def _show_error(self, e: InputException) -> None:
+        self._error_box.set_text(str(e))
+        self._error_box.display()
+
+    def _on_ok_pressed(self) -> None:
+        try:
+            self._validate_input()
+            self._value = self._input.toPlainText()
+            self._is_valid = True
+            self._error_box.hide()
+
+            self.value_changed.emit(self._value)
+
+        except InputException as e:
+            self._value = None
+            self._is_valid = False
+            self._show_error(e)
+
+    def _on_file_loaded(self) -> None:
+        self._input.setText(self._txt_loader.value)
+        self._error_box.hide()
+
+#################################################################################################
+# user_input/input_error.py
+#################################################################################################
+
+from typing import Optional
+from PyQt6 import QtWidgets
+
+
+class InputErrorBox(QtWidgets.QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._layout = QtWidgets.QHBoxLayout()
+        self.setLayout(self._layout)
+
+        self._error_label = QtWidgets.QLabel()
+        self._error_label.setStyleSheet("color: red;")
+        self._error_label.setFixedWidth(400)
+        self._error_label.setWordWrap(True)
+
+        self._layout.addWidget(self._error_label)
+
+        self._value: Optional[str] = None
+
+    @property
+    def value(self) -> Optional[str]:
+        return self._value
+
+    def set_text(self, text: str) -> None:
+        self._value = text
+        self._error_label.setText(self._value)
+
+    def display(self) -> None:
+        self.show()
+
+    def hide(self) -> None:
+        self._value = None
+        self._error_label.clear()
+
+
+class InputException(Exception):
+    pass
+
+#################################################################################################
+# user_input/input_validator.py
+#################################################################################################
+
+from src.command_list import Commands
+from .input_error import InputException
+
+
+class InputValidator:
+    EMPTY_INPUT_ERROR_MESSAGE = "A entrada não pode ser vazia."
+    NO_MANDATORY_COMMAND_ERROR_MESSAGE = (
+        "A entrada deve conter pelo menos uma nota ou comandos de repetição definidos."
+    )
+
+    @staticmethod
+    def _has_at_least_one_mandatory_command_defined(input_str: str) -> bool:
+        return any(command in input_str.lower() for command in Commands.mandatory())
+
+    @classmethod
+    def validate(cls, input_str: str) -> None:
+        if not input_str:
+            raise InputException(cls.EMPTY_INPUT_ERROR_MESSAGE)
+
+        if not cls._has_at_least_one_mandatory_command_defined(input_str):
+            raise InputException(cls.NO_MANDATORY_COMMAND_ERROR_MESSAGE)
+
+#################################################################################################
+# user_input/txt_loader.py
+#################################################################################################
+
+from pathlib import Path
+from PyQt6 import QtWidgets
+from PyQt6.QtCore import pyqtSignal
+
+
+class TxtLoaderWidget(QtWidgets.QWidget):
+    file_loaded = pyqtSignal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._layout = QtWidgets.QHBoxLayout()
+        self.setLayout(self._layout)
+
+        self._load_button = QtWidgets.QPushButton("Carregar .txt")
+        self._load_button.setFixedWidth(80)
+        self._load_button.clicked.connect(self._on_load_pressed)
+
+        self._layout.addWidget(self._load_button)
+
+        self._value = ""
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    def _on_load_pressed(self) -> None:
+        file_path, extension = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            directory="./",
+            filter="*.txt",
+            options=QtWidgets.QFileDialog.Option.DontUseNativeDialog,
+        )
+
+        if len(file_path) == 0:
+            self._value = ""
+        else:
+            file_path = Path(file_path).resolve()
+            with open(file_path, "r") as file:
+                value = file.read()
+                self._value = value
+
+        self.file_loaded.emit(self._value)
+
+#################################################################################################
+# tests/control_board/test_control_board.py
+#################################################################################################
+
+from src.control_board import ControlBoard
+
+
+def test_start_with_play_button(qtbot):
+    control_board = ControlBoard()
+    assert (
+        control_board._play_pause_button._icon
+        == control_board._play_pause_button._play_image
+    )
+
+
+def test_starts_with_restart_unblocked(qtbot):
+    control_board = ControlBoard()
+    assert not control_board._restart_button.is_blocked
+
+
+def test_starts_not_playing(qtbot):
+    control_board = ControlBoard()
+    assert not control_board._is_playing
+
+
+def test_click_play_blocks_restart(qtbot):
+    control_board = ControlBoard()
+    control_board._play_pause_button.click()
+
+    assert control_board._restart_button.is_blocked
+
+
+def test_click_pause_unblocks_restart(qtbot):
+    control_board = ControlBoard()
+    control_board._play_pause_button.click()
+    control_board._play_pause_button.click()
+
+    assert not control_board._restart_button.is_blocked
+
+
+def test_click_play_emits_signal(qtbot):
+    control_board = ControlBoard()
+    with qtbot.waitSignal(control_board.play):
+        control_board._play_pause_button.click()
+
+
+def test_click_pause_emits_signal(qtbot):
+    control_board = ControlBoard()
+    with qtbot.waitSignal(control_board.pause):
+        control_board._play_pause_button.click()
+        control_board._play_pause_button.click()
+
+
+def test_click_restart_emits_signal(qtbot):
+    control_board = ControlBoard()
+    with qtbot.waitSignal(control_board.restart):
+        control_board._restart_button.click()
+
+
+#################################################################################################
+# tests/control_board/test_play_pause_button.py
+#################################################################################################
+
+from src.control_board import PlayPauseButton
+
+
+def test_starts_with_play_button(qtbot):
+    play_pause_button = PlayPauseButton()
+    assert play_pause_button._icon == play_pause_button._play_image
+
+
+def test_changes_to_pause_after_click(qtbot):
+    play_pause_button = PlayPauseButton()
+    play_pause_button.click()
+
+    assert play_pause_button._icon == play_pause_button._pause_image
+
+
+def test_changes_to_play_after_pause_button_clicked(qtbot):
+    play_pause_button = PlayPauseButton()
+    play_pause_button.click()
+    play_pause_button.click()
+
+    assert play_pause_button._icon == play_pause_button._play_image
+
+
+#################################################################################################
+# tests/control_board/test_restart_button.py
+#################################################################################################
+
+from src.control_board import RestartButton
+
+
+def test_starts_unblocked(qtbot):
+    restart_button = RestartButton()
+
+    assert not restart_button.is_blocked
+    assert restart_button.isEnabled()
+    assert restart_button._icon == restart_button._image
+
+
+def test_remains_unblocked_after_click(qtbot):
+    restart_button = RestartButton()
+    restart_button.click()
+
+    assert not restart_button.is_blocked
+    assert restart_button.isEnabled()
+    assert restart_button._icon == restart_button._image
+
+
+def test_block(qtbot):
+    restart_button = RestartButton()
+    restart_button.block()
+
+    assert restart_button.is_blocked
+    assert not restart_button.isEnabled()
+    assert restart_button._icon == restart_button._image_blocked
+
+
+def test_unblocks(qtbot):
+    restart_button = RestartButton()
+    restart_button.block()
+    restart_button.unblock()
+
+    assert not restart_button.is_blocked
+    assert restart_button.isEnabled()
+    assert restart_button._icon == restart_button._image
+
+
+#################################################################################################
+# tests/user_input/test_input_validator.py
+#################################################################################################
+
+import pytest
+
+from src.user_input import InputValidator, InputException
+from src.command_list import Commands
+
+
+def test_raises_exception_if_input_is_empty():
+    with pytest.raises(InputException, match=InputValidator.EMPTY_INPUT_ERROR_MESSAGE):
+        InputValidator.validate("")
+
+
+def test_raises_exception_if_input_has_no_mandatory_commands():
+    with pytest.raises(
+        InputException, match=InputValidator.NO_MANDATORY_COMMAND_ERROR_MESSAGE
+    ):
+        InputValidator.validate("--")
+
+
+@pytest.mark.parametrize("command", Commands.mandatory())
+def test_returns_none_for_input_with_one_mandatory_command_only(command):
+    assert InputValidator.validate(command.value) is None
+
+
+def test_returns_none_for_valid_input_with_chars_not_defined_in_commands():
+    assert InputValidator.validate("A 123") is None
+
+#################################################################################################
+# tests/user_input/test_user_input_widget.py
+#################################################################################################
+
+import pytest
+
+from src.user_input import UserInputWidget, InputException, InputValidator
+from src.commands import Commands
+
+
+def test_none_value_at_start(qtbot):
+    user_input_widget = UserInputWidget()
+    assert user_input_widget.value is None
+
+
+def test_none_is_valid_at_start(qtbot):
+    user_input_widget = UserInputWidget()
+    assert user_input_widget.is_valid is None
+
+
+def test_not_blocked_at_start(qtbot):
+    user_input_widget = UserInputWidget()
+
+    assert not user_input_widget.is_blocked
+    assert user_input_widget._input.isEnabled()
+    assert user_input_widget._ok_button.isEnabled()
+    assert user_input_widget._txt_loader.isEnabled()
+
+
+def test_block(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget.block()
+
+    assert user_input_widget.is_blocked
+    assert not user_input_widget._input.isEnabled()
+    assert not user_input_widget._ok_button.isEnabled()
+    assert not user_input_widget._txt_loader.isEnabled()
+
+
+def test_unblock(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget.block()
+    user_input_widget.unblock()
+
+    assert not user_input_widget.is_blocked
+    assert user_input_widget._input.isEnabled()
+    assert user_input_widget._ok_button.isEnabled()
+    assert user_input_widget._txt_loader.isEnabled()
+
+
+def test_empty_input_is_invalid(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText("")
+
+    with pytest.raises(
+        InputException, match=InputValidator.EMPTY_INPUT_ERROR_MESSAGE
+    ) as _:
+        user_input_widget._validate_input()
+
+    assert not user_input_widget.is_valid
+
+
+def test_input_with_no_mandatory_commands_is_invalid(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText("1")
+
+    with pytest.raises(
+        InputException, match=InputValidator.NO_MANDATORY_COMMAND_ERROR_MESSAGE
+    ) as _:
+        user_input_widget._validate_input()
+
+    assert not user_input_widget.is_valid
+
+
+@pytest.mark.parametrize("command", Commands.mandatory())
+def test_input_with_one_mandatory_command_is_valid(qtbot, command):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText(command.value)
+    user_input_widget._validate_input()
+
+
+@pytest.mark.parametrize("command", Commands.mandatory())
+def test_input_with_one_uppercase_mandatory_command_is_valid(qtbot, command):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText(command.value.upper())
+    user_input_widget._validate_input()
+
+
+def test_is_valid_is_true_for_valid_input(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText("a")
+    user_input_widget._ok_button.click()
+
+    assert user_input_widget.is_valid
+
+
+def test_value_is_input_when_valid(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText("a")
+    user_input_widget._ok_button.click()
+
+    assert user_input_widget.value == "a"
+
+
+def test_click_ok_emits_signal(qtbot):
+    user_input_widget = UserInputWidget()
+    user_input_widget._input.setPlainText("a")
+
+    with qtbot.waitSignal(user_input_widget.value_changed):
+        user_input_widget._ok_button.click()
