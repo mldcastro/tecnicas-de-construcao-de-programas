@@ -87,7 +87,7 @@ Foi modificado também a localização dos componentes para uma melhorar organiz
 
 ### Classes relacionadas ao input do usuário
 
-A classe `UserInputBox` da Fase 1, foi dividida em 3 partes na Fase 3: `UserInputWidget`, `TxtLoaderWidget` e `InputValidator`; porém, a classe `InputErrorBox` se manteve a mesma.
+A classe `UserInputBox` da Fase 1, foi dividida em 3 partes na Fase 3: `UserInputWidget`, `TxtLoaderWidget` e `InputValidator`; porém, a classe `InputErrorBox` se manteve a mesma. `TxtLoaderWidget` irá lidar com o carregamento do arquivo de texto. Já `UserInputWidget` irá lidar com os elementos gráficos  caixa de texto , que poderá ser carregado com um arquivo `.txt` por `TxtLoaderWidget` ou escrito diretamente, e botao de `OK`, que chamará `InputValidator` para validar entrada. `TxtLoaderWidget` também associa `InputErrorBox` para controlar a exibição ou não da mensagem de erro de entrada.
 
 A nova organização das classes relacionadas ao input foi:
 
@@ -225,7 +225,8 @@ class InputValidator:
 
 ### Classes relacionadas ao áudio
 
-A classe `Audio` ficou consideravelmente maior e mais complexa devido ao fato de termos que lidar com threads.
+A classe `Audio` é onde de as notas de fato são executadas (utilizando os métodos de pyGame) e a sequência de entrada é processada.
+Para atender o requisito relacionado à possibilidade de pause (e resume), foi necessário o uso de threads, deixando a classe `Audio` maior e mais mais complexa. No caso, o sinal de play ou pause é originado de `ControlBoard`, e enviado à classe `Audio` por meio de `MusicPlayer`.
 
 #### `Audio`
 
@@ -732,3 +733,9 @@ Os testes manuais foram focados em pontos específicos da lista de comandos:
 - Se os valores de aumento de velocidade, oitavas e volume não ultrapassa o limite máximo ou mínimo (teste de fronteiras);
 - Se os valores estão sendo resetados corretamente;
 - Testes de casos específicos como repetição da nota ou o tocar do telefone para as letras 'i', 'o' e 'u', procurando obter ambas variações.
+
+## Diagrama simplificado das classes
+
+Por fim, temos um diagrama das classes simplificado, apenas com o nome delas e suas relações. As setas continuas representam relação de associação (um atributo de uma classe é objeto de outra), já as setas tracejadas representam relação de dependência (uma classe usa métodos de outra). O diagrama representa de forma sucinta a modularidade e a organização do programa.
+
+![Diagrama simplificado das classes.](UML_das_classes.png)
